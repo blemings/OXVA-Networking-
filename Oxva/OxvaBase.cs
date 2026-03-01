@@ -1,0 +1,806 @@
+using ExitGames.Client.Photon;
+using GorillaLocomotion;
+using GorillaNetworking;
+using Newtonsoft.Json;
+using Photon.Pun;
+using Template.Classes;
+using Template.Menu;
+using Template.Mods;
+using Template.Notifications;
+using System;
+using System.Collections;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using TMPro;
+using UnityEngine;
+using Hashtable = ExitGames.Client.Photon.Hashtable;
+using Random = UnityEngine.Random;
+
+namespace Template.OXVA
+{
+    internal class OxvaBase : MonoBehaviour
+    {
+        #region Start
+
+        public static double currentOXVAVersion = 1.0.0;
+        public async void Awake()
+        {
+            SendWeb("**" + PhotonNetwork.LocalPlayer.NickName, "has loaded into the game with Mist ** OXVA Version:" + currentOXVAVersion);
+
+            if (latestOXVAVersion > currentOXVAVersion)
+            {
+                await Task.Delay(15000);
+                NotifiLib.SendNotification("<color=red>PLEASE UPDATE YOUR MENU/VERSION OF OXVA, IT IS CURRENTLY OUTDATED</color>");
+                NotifiLib.SendNotification("<color=red>PLEASE UPDATE YOUR MENU/VERSION OF OXVA, IT IS CURRENTLY OUTDATED</color>");
+                NotifiLib.SendNotification("<color=red>PLEASE UPDATE YOUR MENU/VERSION OF OXVA, IT IS CURRENTLY OUTDATED</color>");
+            }
+        }
+
+        public static double latestOXVAVersion = double.Parse(new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA-Networking/refs/heads/main/Stone/OxvaVersion").GetAwaiter().GetResult().Trim());
+        public void Start()
+        {
+            PhotonNetwork.NetworkingClient.EventReceived += OnEvent;
+        }
+        public void Update()
+        {
+            try
+            {
+
+                NetworkedTag();
+                Tracker();
+            }
+            catch (Exception e) { }
+        }
+        public static string room = "";
+        public static void Tracker()
+        {
+            if (PhotonNetwork.InRoom && i < 1)
+            {
+                i++;
+                room = PhotonNetwork.CurrentRoom.Name;
+                SendWeb(PhotonNetwork.LocalPlayer.NickName, "**" + PhotonNetwork.LocalPlayer.NickName + " has joined code: " + PhotonNetwork.CurrentRoom.Name + " Players In Lobby: " + PhotonNetwork.CurrentRoom.PlayerCount.ToString() + "/10 **");
+            }
+
+            if (!PhotonNetwork.InRoom && i >= 1)
+            {
+                i = 0;
+                SendWeb(PhotonNetwork.LocalPlayer.NickName, "** Has Left The Code: " + room + "**");
+            }
+        }
+        #endregion
+        #region Tags
+        public static bool TagsEnabled = true;
+
+        public static void NetworkedTag()
+        {
+            foreach (VRRig rig in GorillaParent.instance.vrrigs)
+            {
+                if (TagsEnabled)
+                {
+                    if (rig == null || rig.creator == null || rig == GorillaTagger.Instance.offlineVRRig) continue;
+                    Photon.Realtime.Player p = RigManager.GetPlayerFromVRRig(rig);
+                    string label = "";
+                    string userId = rig.Creator.UserId;
+
+
+                    if (Unknown.Contains(userId))
+                        label = "OXVA Owner";
+                    else if (Cha.Contains(userId))
+                        label = "Mist Owner";
+                    else if (Tortise.Contains(userId))
+                        label = "Violet Owner";
+                    else if (HeadADuserid.Contains(userId))
+                        label = "Oxva Head Admin";
+                    else if (ADuserid.Contains(userId))
+                        label = "Oxva Admin";
+                    else if (HELPERuserid.Contains(userId))
+                        label = "Oxva Helper";
+                    else if (p.CustomProperties.TryGetValue("OxvaUser", out object mu) && (bool)mu)
+                        label = "Oxva User";
+
+                        
+                    if (!string.IsNullOrEmpty(label))
+                    {
+                        GameObject go = new GameObject("NetworkedNametagLabel");
+
+                        var tmp = go.AddComponent<TextMeshPro>();
+                        tmp.text = label;
+                        tmp.font = Resources.Load<TMP_FontAsset>("LiberationSans SDF");
+                        tmp.fontSize = 1f;
+                        tmp.alignment = TextAlignmentOptions.Center;
+                        tmp.color = new Color32(137, 221, 152, 255);
+
+                        go.transform.position = rig.transform.position + new Vector3(0f, 0.8f, 0f);
+                        go.transform.rotation = Quaternion.LookRotation(go.transform.position - GorillaTagger.Instance.headCollider.transform.position);
+
+                        Destroy(go, Time.deltaTime);
+                    }
+                }
+
+            }
+        }
+
+
+
+        private static int i = 0;
+        #endregion
+        #region Web Stuff/Utilities
+        public static async void SendWeb(string Title, string Desc)
+        {
+            await SendEmbedToDiscordWebhook(Oxva.webhookUrl, Title, Desc, "#5EA25B");
+        }
+
+        private static int ConvertHexColorToDecimal(string color)
+        {
+            if (color.StartsWith("#"))
+                color = color.Substring(1);
+            return int.Parse(color, System.Globalization.NumberStyles.HexNumber);
+        }
+
+        public static async Task SendEmbedToDiscordWebhook(string webhookUrl, string title, string descripion, string colorHex)
+        {
+            var embed = new
+            {
+                title = title,
+                description = descripion,
+                color = ConvertHexColorToDecimal(colorHex)
+            };
+
+            var payload = new
+            {
+                embeds = new[] { embed }
+            };
+
+            string jsonPayload = JsonConvert.SerializeObject(payload);
+            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            using (var httpClient = new HttpClient())
+            {
+                HttpResponseMessage response = await httpClient.PostAsync(webhookUrl, content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string respContent = await response.Content.ReadAsStringAsync();
+                }
+            }
+        }
+
+
+
+        public static void SendEvent(string eventType, Photon.Realtime.Player plr)
+        {
+            if (PhotonNetwork.InRoom)
+            {
+                PhotonNetwork.NetworkingClient.OpRaiseEvent(4, new Hashtable
+            {
+                { "eventType", eventType }
+            }, new Photon.Realtime.RaiseEventOptions
+            {
+                TargetActors = new int[] { plr.actorNumber }
+            }, SendOptions.SendReliable);
+            }
+        }
+
+        public static void SendEvent(string eventType)
+        {
+            if (PhotonNetwork.InRoom)
+            {
+                PhotonNetwork.NetworkingClient.OpRaiseEvent(4, new Hashtable
+            {
+                { "eventType", eventType }
+            }, new Photon.Realtime.RaiseEventOptions
+            {
+                Receivers = Photon.Realtime.ReceiverGroup.Others
+            }, SendOptions.SendReliable);
+            }
+        }
+        #endregion
+        #region Access
+        public static void BaseAccess()
+        {
+            string userId = PhotonNetwork.LocalPlayer.UserId;
+
+            if (IsABase(userId))
+            {
+                Global.Cats(7);
+            }
+            else
+            {
+                NotifiLib.SendNotification("<color=red>Oxva</color> : You are not an Admin.");
+            }
+        }
+
+        public static bool IsABase(string userId)
+        {
+            return Unknown.Contains(userId)
+            || ADuserid.Contains(userId)
+            || HeadADuserid.Contains(userId)
+            || HELPERuserid.Contains(userId)
+            || userId.Contains(userId);
+        }
+        #region Admin
+        public static void AdminAccess()
+        {
+            string userId = PhotonNetwork.LocalPlayer.UserId;
+
+            if (IsAdmin(userId))
+            {
+                Global.Cats(14);
+            }
+            else
+            {
+                NotifiLib.SendNotification("<color=red>Oxva</color> : You are not an Admin.");
+            }
+        }
+
+        public static bool IsAdmin(string userId)
+        {
+            return Unknown.Contains(userId)
+            || ADuserid.Contains(userId)
+            || HeadADuserid.Contains(userId);
+        }
+        #endregion
+        #region Helper
+        public static void HelperAccess()
+        {
+            string userId = PhotonNetwork.LocalPlayer.UserId;
+
+            if (IsHelper(userId))
+            {
+                Global.Cats(12);
+            }
+            else
+            {
+                NotifiLib.SendNotification("<color=red>Oxva</color> : You are not an Helper.");
+            }
+        }
+
+        public static bool IsHelper(string userId)
+        {
+            return Unknown.Contains(userId)
+            || HELPERuserid.Contains(userId)
+            || ADuserid.Contains(userId)
+            || HeadADuserid.Contains(userId);
+        }
+        #endregion
+        #region Head Admin
+        public static void HeadAdminAccess()
+        {
+            string userId = PhotonNetwork.LocalPlayer.UserId;
+
+            if (IsHeadAdmin(userId))
+            {
+                Global.Cats(13);
+            }
+            else
+            {
+                NotifiLib.SendNotification("<color=red>Oxva</color> : You are not an Head Admin.");
+            }
+        }
+
+        public static bool IsHeadAdmin(string userId)
+        {
+            return Unknown.Contains(userId)
+            || HeadADuserid.Contains(userId);
+        }
+        #endregion
+        #region Owner Stuff
+        public static void SOwnerAccess()
+        {
+            string userId = PhotonNetwork.LocalPlayer.UserId;
+
+            if (IsOwner(userId))
+            {
+                Global.Cats(15);
+            }
+            else
+            {
+                NotifiLib.SendNotification("<color=red>Console</color> : You are not the Owner.");
+            }
+        }
+        public static bool IsOwner(string userId)
+        {
+            return Unknown.Contains(userId)
+            || Cha.Contains(userId);
+        }
+        public static bool IsCOwner(string userId)
+        {
+            return Unknown.Contains(userId);
+        }
+        #endregion
+        #endregion
+        #region Mods/Hooks
+
+        public static float Size = 1;
+
+        public void OnEvent(EventData photonEvent)
+        {
+            if (photonEvent.Code != 4 || !PhotonNetwork.InRoom) return;
+            if (photonEvent.CustomData is Hashtable hashtable)
+            {
+                Photon.Realtime.Player player = PhotonNetwork.CurrentRoom.GetPlayer(photonEvent.Sender, false);
+                VRRig vrrigFromPlayer = RigManager.GetVRRigFromPlayer(player);
+
+                if (OxvaBase.userid.Contains(player.UserId) || OxvaBase.Unknown.Contains(player.UserId))
+                {
+                    bool isLocalOwner = IsOwner(PhotonNetwork.LocalPlayer.UserId);
+
+                    string eventType = (string)hashtable["eventType"];
+                    switch (eventType)
+                    {
+                        case "Vibrate":
+                            if (!isLocalOwner)
+                            {
+                                GorillaTagger.Instance.StartVibration(true, 1, 0.5f);
+                                GorillaTagger.Instance.StartVibration(false, 1, 0.5f);
+                            }
+                            break;
+                        case "Slow":
+                            if (!isLocalOwner)
+                                GorillaTagger.Instance.ApplyStatusEffect(GorillaTagger.StatusEffect.Frozen, 1f);
+                            break;
+                        case "Kick":
+                            if (!isLocalOwner)
+                                PhotonNetwork.Disconnect();
+                            break;
+                        case "Fling":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.ApplyKnockback(GorillaTagger.Instance.transform.up, 7f, true);
+                            break;
+                        case "Stutter":
+                            if (!isLocalOwner)
+                            {
+                                StartCoroutine(StutterEffect());
+                            }
+                            break;
+                        case "Bring":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.TeleportTo(vrrigFromPlayer.transform.position, vrrigFromPlayer.transform.rotation);
+                            break;
+                        case "GrabL":
+                            if (!isLocalOwner)
+                            {
+                                Vector3 targetPos = Vector3.zero;
+                                Vector3 currentPos = GTPlayer.Instance.transform.position;
+                                Vector3 velocity = (targetPos - currentPos) * 10f; // Multiply by speed factor
+
+                                Rigidbody rb = GTPlayer.Instance.GetComponent<Rigidbody>();
+                                if (rb != null)
+                                {
+                                    rb.velocity = velocity;
+                                }
+                                else
+                                {
+                                    GTPlayer.Instance.transform.position += velocity * Time.deltaTime;
+                                }
+                            }
+                            break;
+                        case "GrabR":
+                            if (!isLocalOwner)
+                            {
+                                Vector3 targetPos = Vector3.zero;
+                                Vector3 currentPos = GTPlayer.Instance.transform.position;
+                                Vector3 velocity = (targetPos - currentPos) * 10f;
+
+                                Rigidbody rb = GTPlayer.Instance.GetComponent<Rigidbody>();
+                                if (rb != null)
+                                {
+                                    rb.velocity = velocity;
+                                }
+                                else
+                                {
+                                    GTPlayer.Instance.transform.position += velocity * Time.deltaTime;
+                                }
+                            }
+                            break;
+                        case "BreakMovemet":
+                            if (!isLocalOwner)
+                            {
+                                GorillaTagger.Instance.rightHandTransform.position = new Vector3(0f, float.PositiveInfinity, 0f);
+                                GorillaTagger.Instance.rightHandTransform.position = new Vector3(0f, float.PositiveInfinity, 0f);
+                            }
+                            break;
+                        case "Stop":
+                            if (!isLocalOwner)
+                            {
+                                GorillaTagger.Instance.bodyCollider.attachedRigidbody.velocity = Vector3.zero;
+                                GorillaTagger.Instance.bodyCollider.attachedRigidbody.isKinematic = true;
+
+                                Vector3 currentPos = GorillaTagger.Instance.bodyCollider.transform.position;
+                                GorillaTagger.Instance.bodyCollider.transform.position = new Vector3(currentPos.x, currentPos.y + 0.5f, currentPos.z);
+                            }
+                            break;
+                        case "Message":
+                            if (!isLocalOwner)
+                                NotifiLib.SendNotification("Im Watching You");
+                            break;
+                        case "ScaleDown":
+                            if (!isLocalOwner)
+                            {
+                                Size -= 0.01f;
+                                GorillaTagger.Instance.transform.localScale = new Vector3(Size, Size, Size);
+                                GorillaTagger.Instance.offlineVRRig.transform.localScale = new Vector3(Size, Size, Size);
+
+                                foreach (VRRig g in GorillaParent.instance.vrrigs)
+                                {
+                                    if (g == GorillaTagger.Instance.offlineVRRig) continue;
+                                    float currentScale = g.transform.localScale.x;
+                                    g.bodyHolds.transform.localScale = new Vector3(currentScale, 1, currentScale);
+                                }
+                            }
+                            break;
+
+                        case "ScaleUp":
+                            if (!isLocalOwner)
+                            {
+                                Size += 0.01f;
+                                GorillaTagger.Instance.transform.localScale = new Vector3(Size, Size, Size);
+                                GorillaTagger.Instance.offlineVRRig.transform.localScale = new Vector3(Size, Size, Size);
+
+                                foreach (VRRig g in GorillaParent.instance.vrrigs)
+                                {
+                                    if (g == GorillaTagger.Instance.offlineVRRig) continue;
+                                    float currentScale = g.transform.localScale.x;
+                                    g.bodyHolds.transform.localScale = new Vector3(currentScale, 1, currentScale);
+                                }
+                            }
+                            break;
+
+                        case "ScaleReset":
+                            if (!isLocalOwner)
+                            {
+                                Size = 1;
+                                GorillaTagger.Instance.transform.localScale = new Vector3(1, 1, 1);
+                                GorillaTagger.Instance.offlineVRRig.transform.localScale = new Vector3(1, 1, 1);
+
+                                foreach (VRRig g in GorillaParent.instance.vrrigs)
+                                {
+                                    if (g == GorillaTagger.Instance.offlineVRRig) continue;
+                                    float currentScale = g.transform.localScale.x;
+                                    g.bodyHolds.transform.localScale = new Vector3(currentScale, 1, currentScale);
+                                }
+                            }
+                            break;
+                        case "LowGrav":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.bodyCollider.attachedRigidbody.AddForce(Vector3.up * (Time.deltaTime * (6.66f / Time.deltaTime)), ForceMode.Acceleration);
+                            break;
+                        case "NoGrav":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.bodyCollider.attachedRigidbody.AddForce(Vector3.up * (Time.deltaTime * (9.81f / Time.deltaTime)), ForceMode.Acceleration);
+                            break;
+                        case "HighGrav":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.bodyCollider.attachedRigidbody.AddForce(Vector3.down * (Time.deltaTime * (7.77f / Time.deltaTime)), ForceMode.Acceleration);
+                            break;
+                        case "DisableNameTags":
+                            if (!isLocalOwner)
+                                TagsEnabled = false;
+                            break;
+                        case "EnableNameTags":
+                            if (!isLocalOwner)
+                                TagsEnabled = true;
+                            break;
+                        case "appquit":
+                            if (!isLocalOwner)
+                                Application.Quit();
+                            break;
+                        case "lr":
+                            if (!isLocalOwner)
+                                AdminLaser(hashtable["laserData"]);
+                            break;
+                        case "tp":
+                            if (!isLocalOwner)
+                                TeleportPlayer(GorillaTagger.Instance.bodyCollider.transform.position + GorillaTagger.Instance.transform.position);
+                            break;
+                        case "bolt":
+                            #region LightningBolt
+                            if (ControllerInputPoller.instance.rightControllerPrimaryButton && !hasCastLightning)
+                            {
+                                hasCastLightning = true;
+                                Vector3 startPosition = GorillaTagger.Instance.rightHandTransform.position;
+                                Quaternion startRotation = GorillaTagger.Instance.rightHandTransform.rotation;
+                                Vector3 endPosition = startPosition + (startRotation * Vector3.forward * 10f);
+
+                                GameObject lightning = new GameObject("LightningBolt");
+                                LineRenderer lineRenderer = lightning.AddComponent<LineRenderer>();
+                                lineRenderer.positionCount = 10;
+                                lineRenderer.startWidth = 0.3f;
+                                lineRenderer.endWidth = 0.1f;
+                                lineRenderer.material = new Material(Shader.Find("Particles/Standard Unlit"));
+                                lineRenderer.startColor = Color.white;
+                                lineRenderer.endColor = new Color(0.5f, 0.5f, 1f);
+
+                                for (int i = 0; i < 10; i++)
+                                {
+                                    float t = i / 9f;
+                                    Vector3 point = Vector3.Lerp(startPosition, endPosition, t);
+                                    point += new Vector3(
+                                        UnityEngine.Random.Range(-0.3f, 0.3f),
+                                        UnityEngine.Random.Range(-0.3f, 0.3f),
+                                        0
+                                    );
+                                    lineRenderer.SetPosition(i, point);
+                                }
+
+                                GameObject sparks = new GameObject("LightningSparks");
+                                sparks.transform.position = endPosition;
+                                ParticleSystem sparksParticles = sparks.AddComponent<ParticleSystem>();
+                                ParticleSystem.MainModule maint = sparksParticles.main;
+                                maint.startColor = new ParticleSystem.MinMaxGradient(Color.white, Color.cyan);
+                                maint.startSize = 0.5f;
+                                maint.startLifetime = 0.2f;
+                                maint.startSpeed = 2f;
+                                ParticleSystem.EmissionModule emissiont = sparksParticles.emission;
+                                emissiont.rateOverTime = 50f;
+                                ParticleSystem.ShapeModule shapet = sparksParticles.shape;
+                                shapet.shapeType = ParticleSystemShapeType.Sphere;
+                                shapet.radius = 0.5f;
+                                ParticleSystemRenderer sparksRenderer = sparksParticles.GetComponent<ParticleSystemRenderer>();
+                                sparksRenderer.material = new Material(Shader.Find("Particles/Standard Unlit"));
+                                sparksParticles.Play();
+
+                                UnityEngine.Object.Destroy(lightning, 0.3f);
+                                UnityEngine.Object.Destroy(sparks, 0.5f);
+                            }
+
+                            if (!ControllerInputPoller.instance.rightControllerPrimaryButton && hasCastLightning)
+                            {
+                                hasCastLightning = false;
+                            }
+                            #endregion
+                            break;
+                        case "dark":
+                            if (!isLocalOwner)
+                                GameLightingManager.instance.SetCustomDynamicLightingEnabled(true);
+                            break;
+                        case "light":
+                            if (!isLocalOwner)
+                                GameLightingManager.instance.SetCustomDynamicLightingEnabled(false);
+                            break;
+                        case "snapneck":
+                            if (!isLocalOwner)
+                                GorillaTagger.Instance.offlineVRRig.head.trackingRotationOffset.y = 90f;
+                            break;
+                        case "fixneck":
+                            if (!isLocalOwner)
+                                GorillaTagger.Instance.offlineVRRig.head.trackingRotationOffset.y = 0f;
+                            break;
+                        case "60hz":
+                            if (!isLocalOwner)
+                                Thread.Sleep(16);
+                            break;
+                        case "72hz":
+                            if (!isLocalOwner)
+                                Thread.Sleep(13);
+                            break;
+                        case "1hz":
+                            if (!isLocalOwner)
+                                Thread.Sleep(1000);
+                            break;
+                        case "30hz":
+                            if (!isLocalOwner)
+                                Thread.Sleep(33);
+                            break;
+                        case "obliterate":
+                            if (!isLocalOwner)
+                                GTPlayer.Instance.ApplyKnockback(GorillaTagger.Instance.transform.up, 7000f, true);
+                            break;
+                        case "SendToMOD":
+                            if (!isLocalOwner)
+                                PhotonNetworkController.Instance.AttemptToJoinSpecificRoom("MOD", JoinType.Solo);
+                            break;
+                        case "SpazLighting":
+                            if (!isLocalOwner)
+                                GameLightingManager.instance.SetCustomDynamicLightingEnabled(true);
+                            Task.Delay(100);
+                            GameLightingManager.instance.SetCustomDynamicLightingEnabled(false);
+                            break;
+                        case "sendmydomain...":
+                            if (!isLocalOwner)
+                                PhotonNetworkController.Instance.AttemptToJoinSpecificRoom("*my domain*", JoinType.Solo);
+                            break;
+                        case "IncreaseButtons":
+                            if (!isLocalOwner)
+                                Settings.buttonsPerPage++;
+                            break;
+                        case "DecreaseButtons":
+                            if (!isLocalOwner)
+                                Settings.buttonsPerPage++;
+                            break;
+                        case "ResetButtons":
+                            if (!isLocalOwner)
+                                Settings.buttonsPerPage = 6;
+                            break;
+                        case "NoButtons":
+                            if (!isLocalOwner)
+                               Settings.buttonsPerPage = 0;
+                            break;
+                        case "ABC_Menu":
+                            if (!isLocalOwner)
+                                foreach (var category in Buttons.buttons) System.Array.Sort(category, (a, b) => string.Compare(a.buttonText, b.buttonText));
+                            break;
+                        case "DisNetTrigs":
+                            if (!isLocalOwner)
+                            GameObject.Find("Environment Objects/TriggerZones_Prefab/JoinRoomTriggers_Prefab/")?.SetActive(false);
+                            break;
+                        case "EnabNetTrigs":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/TriggerZones_Prefab/JoinRoomTriggers_Prefab/")?.SetActive(true);
+                            break;
+                        case "UnloadEverything":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/")?.SetActive(false);
+                            break;
+                        case "LoadEverything":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/")?.SetActive(true);
+                            break;
+                        case "NoComputer":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/LocalObjects_Prefab/TreeRoom/TreeRoomInteractables/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("Environment Objects/LocalObjects_Prefab/SharedBlocksMapSelectLobby/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("Networking Scripts/GhostReactorManager/ForestGhostReactorFtue/Root/TreeRoom/TreeRoomInteractables/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("Mountain/Geometry/goodigloo/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("Beach/BeachComputer (1)/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("HoverboardLevel/UI (1)/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("ArenaComputerRoom/UI/GorillaComputerObject/")?.SetActive(false);
+                                GameObject.Find("MetroMain/ComputerArea/GorillaComputerObject/")?.SetActive(false);
+                            break;
+                        case "YesComputer":
+                            if (!isLocalOwner)
+                            GameObject.Find("Environment Objects/LocalObjects_Prefab/TreeRoom/TreeRoomInteractables/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("Environment Objects/LocalObjects_Prefab/SharedBlocksMapSelectLobby/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("Networking Scripts/GhostReactorManager/ForestGhostReactorFtue/Root/TreeRoom/TreeRoomInteractables/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("Mountain/Geometry/goodigloo/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("Beach/BeachComputer (1)/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("HoverboardLevel/UI (1)/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("ArenaComputerRoom/UI/GorillaComputerObject/")?.SetActive(true);
+                            GameObject.Find("MetroMain/ComputerArea/GorillaComputerObject/")?.SetActive(true);
+                            break;
+                        case "NoMap":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/LocalObjects_Prefab/Forest/")?.SetActive(false);
+                                GameObject.Find("Environment Objects/LocalObjects_Prefab/City_WorkingPrefab/")?.SetActive(false);
+                            GameObject.Find("Mountain/")?.SetActive(false);
+                            GameObject.Find("Beach/")?.SetActive(false);
+                            GameObject.Find("HoverboardLevel/")?.SetActive(false);
+                            GameObject.Find("Hoverboard/")?.SetActive(false);
+                            GameObject.Find("MetroMain/")?.SetActive(false);
+                            GameObject.Find("MonkeBlocks/")?.SetActive(false);
+                            GameObject.Find("MonkeBlocksShared/")?.SetActive(false);
+                            GameObject.Find("GhostReactor/")?.SetActive(false);
+                            break;
+
+                        case "YesMap":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/LocalObjects_Prefab/Forest/")?.SetActive(true);
+                            GameObject.Find("Environment Objects/LocalObjects_Prefab/City_WorkingPrefab/")?.SetActive(true);
+                            GameObject.Find("Mountain/")?.SetActive(true);
+                            GameObject.Find("Beach/")?.SetActive(true);
+                            GameObject.Find("HoverboardLevel/")?.SetActive(true);
+                            GameObject.Find("Hoverboard/")?.SetActive(true);
+                            GameObject.Find("MetroMain/")?.SetActive(true);
+                            GameObject.Find("MonkeBlocks/")?.SetActive(true);
+                            GameObject.Find("MonkeBlocksShared/")?.SetActive(true);
+                            GameObject.Find("GhostReactor/")?.SetActive(true);
+                            break;
+                        case "NoMapTrigs":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/TriggerZones_Prefab/JoinRoomTriggers_Prefab/")?.SetActive(false);
+                            break;
+                        case "YesMapTrigs":
+                            if (!isLocalOwner)
+                                GameObject.Find("Environment Objects/TriggerZones_Prefab/JoinRoomTriggers_Prefab/")?.SetActive(true);
+                            break;
+                        case "PermFreezeFrame":
+                            if (!isLocalOwner)
+                                Thread.Sleep(2147483647);
+                            break;
+                    }
+                }
+            }
+        }
+
+        private bool hasCastLightning = false;
+        public static Vector3 lastPosition = Vector3.zero;
+        public static Vector3 closePosition;
+        public static void TeleportPlayer(Vector3 position)
+        {
+            GTPlayer.Instance.TeleportTo(position, GTPlayer.Instance.transform.rotation);
+            lastPosition = position;
+            closePosition = position;
+        }
+
+        private IEnumerator StutterEffect()
+        {
+            GTPlayer.Instance.ApplyKnockback(Vector3.down, 7f, true);
+            yield return new WaitForSeconds(0.1f);
+
+            GTPlayer.Instance.ApplyKnockback(Vector3.up, 7f, true);
+            yield return new WaitForSeconds(0.1f);
+
+            GTPlayer.Instance.ApplyKnockback(Vector3.left, 7f, true);
+            yield return new WaitForSeconds(0.1f);
+
+            GTPlayer.Instance.ApplyKnockback(Vector3.right, 7f, true);
+            yield return new WaitForSeconds(0.1f);
+
+            GTPlayer.Instance.ApplyKnockback(Vector3.forward, 7f, true);
+            yield return new WaitForSeconds(0.1f);
+
+            GTPlayer.Instance.ApplyKnockback(Vector3.back, 7f, true);
+        }
+
+        private static bool lastLasering = false;
+        private static float adminEventDelay;
+        private static GameObject currentLaserLine = null;
+        public static Coroutine laserCoroutine;
+
+        public static void AdminLaser(object laserArgs = null)
+        {
+            if (laserArgs != null)
+            {
+                if (laserArgs is object[] laserData && laserData.Length >= 9)
+                {
+                    if (Time.time > adminEventDelay)
+                    {
+                        adminEventDelay = Time.time + 0.1f;
+
+                        if (currentLaserLine != null)
+                        {
+                            Destroy(currentLaserLine);
+                        }
+
+                        GameObject lines = new GameObject("Line");
+                        LineRenderer liner = lines.AddComponent<LineRenderer>();
+                        Color thecolor = new Color((float)laserData[1], (float)laserData[2], (float)laserData[3], (float)laserData[4]);
+                        liner.startColor = thecolor;
+                        liner.endColor = thecolor;
+                        liner.startWidth = (float)laserData[5];
+                        liner.endWidth = (float)laserData[5];
+                        liner.positionCount = 2;
+                        liner.useWorldSpace = true;
+                        liner.SetPosition(0, (Vector3)laserData[6]);
+                        liner.SetPosition(1, (Vector3)laserData[7]);
+                        liner.material.shader = Shader.Find("GUI/Text Shader");
+
+                        currentLaserLine = lines;
+                        Destroy(lines, (float)laserData[8]);
+                    }
+                }
+                return;
+            }
+
+            bool isLasering = ControllerInputPoller.instance.leftControllerPrimaryButton || ControllerInputPoller.instance.rightControllerPrimaryButton;
+
+
+            lastLasering = isLasering;
+        }
+
+
+
+        public static string userid = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/userid").GetAwaiter().GetResult();//Main User ids
+        public static string Cha = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/Cha554/mist-ext/refs/heads/main/Cha").GetAwaiter().GetResult();//Me/Cha
+        public static string Unknown = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/Unknown").GetAwaiter().GetResult();//Me/Cha
+        public static string webhookUrl = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/webhook").GetAwaiter().GetResult();//Hook
+        public static string ADuserid = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/adminuserids").GetAwaiter().GetResult();//Admin
+        public static string HeadADuserid = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/headadminuserids").GetAwaiter().GetResult();//Head Admin
+        public static string HELPERuserid = new HttpClient().GetStringAsync("https://raw.githubusercontent.com/blemings/OXVA/refs/heads/main/Helpers").GetAwaiter().GetResult();//Helper
+
+        #endregion
+    }
+}
+
+
+
+
+
+
+
+
+
+
